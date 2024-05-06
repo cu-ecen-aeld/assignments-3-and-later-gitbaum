@@ -35,14 +35,12 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     echo "Checking out version ${KERNEL_VERSION}"
     git checkout ${KERNEL_VERSION}
 
-    export ARCH=arm64
-    export CROSS_COMPILE=aarch64-none-linux-gnu-
     # TODO: Add your kernel build steps here
-    make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- mrproper
-    make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- defconfig
-    make -j4 ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- all
-    make -j4 ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- modules
-    make -j4 ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- dtbs
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mrproper
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig
+    make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} all
+    make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} modules
+    make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} dtbs
 fi
 
 echo "Adding the Image in outdir"
@@ -80,20 +78,21 @@ else
 fi
 
 # TODO: Make and install busybox
-make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu-
-make CONFIG_PREFIX=${OUTDIR}/rootfs  ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- install
+make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
+make CONFIG_PREFIX=${OUTDIR}/rootfs ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} install
 
 echo "Library dependencies"
 cd ${OUTDIR}/rootfs
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
-# TODO: Add library dependencies to rootfs
-sudo cp /opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib/ld-linux-aarch64.so.1 ${OUTDIR}/rootfs/lib/
-sudo cp /opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libm.so.6 ${OUTDIR}/rootfs/lib64/
-sudo cp /opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libresolv.so.2 ${OUTDIR}/rootfs/lib64/
-sudo cp /opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libc.so.6 ${OUTDIR}/rootfs/lib64/
+SYSROOT=$(${CROSS_COMPILE}gcc -print-sysroot)
 
+# Add library dependencies to rootfs
+cp ${SYSROOT}/lib/ld-linux-aarch64.so.1 ${OUTDIR}/rootfs/lib/
+cp ${SYSROOT}/lib64/libm.so.6 ${OUTDIR}/rootfs/lib64/
+cp ${SYSROOT}/lib64/libresolv.so.2 ${OUTDIR}/rootfs/lib64/
+cp ${SYSROOT}/lib64/libc.so.6 ${OUTDIR}/rootfs/lib64/
 
 # TODO: Make device nodes
 cd ${OUTDIR}/rootfs
@@ -103,7 +102,7 @@ sudo mknod -m 600 dev/console c 5 1
 # TODO: Clean and build the writer utility
 cd ~/git-repos/assignments-3-and-later-gitbaum/finder-app
 make clean
-make CROSS_COMPILE=aarch64-none-linux-gnu- all
+make CROSS_COMPILE=${CROSS_COMPILE} all
 
 # TODO: Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
