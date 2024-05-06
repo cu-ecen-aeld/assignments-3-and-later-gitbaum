@@ -6,7 +6,8 @@ set -e
 set -u
 
 OUTDIR=/tmp/aeld
-KERNEL_REPO=git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git
+#KERNEL_REPO=git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git
+KERNEL_REPO=https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git
 KERNEL_VERSION=v5.1.10
 BUSYBOX_VERSION=1_33_1
 FINDER_APP_DIR=$(realpath $(dirname $0))
@@ -34,47 +35,89 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     echo "Checking out version ${KERNEL_VERSION}"
     git checkout ${KERNEL_VERSION}
 
+    export ARCH=arm64
+    export CROSS_COMPILE=aarch64-none-linux-gnu-
     # TODO: Add your kernel build steps here
+    make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- mrproper
+    make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- defconfig
+    make -j4 ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- all
+    make -j4 ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- modules
+    make -j4 ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- dtbs
 fi
 
 echo "Adding the Image in outdir"
+cp ${OUTDIR}/linux-stable/arch/arm64/boot/Image ${OUTDIR}
 
 echo "Creating the staging directory for the root filesystem"
 cd "$OUTDIR"
 if [ -d "${OUTDIR}/rootfs" ]
 then
-	echo "Deleting rootfs directory at ${OUTDIR}/rootfs and starting over"
+    echo "Deleting rootfs directory at ${OUTDIR}/rootfs and starting over"
     sudo rm  -rf ${OUTDIR}/rootfs
 fi
 
 # TODO: Create necessary base directories
+mkdir -p ${OUTDIR}/rootfs
+cd ${OUTDIR}/rootfs
+mkdir -p bin dev etc home lib lib64 proc sbin sys tmp usr var
+mkdir -p usr/bin usr/lib usr/sbin
+mkdir -p var/log
+mkdir -p home/conf
+
 
 cd "$OUTDIR"
 if [ ! -d "${OUTDIR}/busybox" ]
 then
-git clone git://busybox.net/busybox.git
+    #git clone git://busybox.net/busybox.git
+    git clone https://github.com/mirror/busybox.git
     cd busybox
     git checkout ${BUSYBOX_VERSION}
     # TODO:  Configure busybox
+    make distclean
+    make defconfig
 else
     cd busybox
 fi
 
 # TODO: Make and install busybox
+make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu-
+make CONFIG_PREFIX=${OUTDIR}/rootfs  ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- install
 
 echo "Library dependencies"
+cd ${OUTDIR}/rootfs
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
 # TODO: Add library dependencies to rootfs
+sudo cp /opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib/ld-linux-aarch64.so.1 ${OUTDIR}/rootfs/lib/
+sudo cp /opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libm.so.6 ${OUTDIR}/rootfs/lib64/
+sudo cp /opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libresolv.so.2 ${OUTDIR}/rootfs/lib64/
+sudo cp /opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libc.so.6 ${OUTDIR}/rootfs/lib64/
+
 
 # TODO: Make device nodes
+cd ${OUTDIR}/rootfs
+sudo mknod -m 666 dev/null c 1 3
+sudo mknod -m 600 dev/console c 5 1
 
 # TODO: Clean and build the writer utility
+cd ~/git-repos/assignments-3-and-later-gitbaum/finder-app
+make clean
+make CROSS_COMPILE=aarch64-none-linux-gnu- all
 
 # TODO: Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
+cp writer finder.sh finder-test.sh autorun-qemu.sh ${OUTDIR}/rootfs/home/
+cp conf/username.txt conf/assignment.txt ${OUTDIR}/rootfs/home/conf/
+sed -i 's#../conf/#conf/#g' ${OUTDIR}/rootfs/home/finder-test.sh
+sed -i 's#/bin/bash#/bin/sh#g' ${OUTDIR}/rootfs/home/finder.sh
 
 # TODO: Chown the root directory
+cd ${OUTDIR}/rootfs
+sudo chown -R root:root *
 
 # TODO: Create initramfs.cpio.gz
+cd ${OUTDIR}/rootfs
+find . | cpio -H newc -ov --owner root:root > ${OUTDIR}/initramfs.cpio
+cd ${OUTDIR}
+gzip -f initramfs.cpio
